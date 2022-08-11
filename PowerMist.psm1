@@ -593,7 +593,7 @@ Function Get-MistSiteWlans
         [switch]
         $Resolve
     )
-    return Get-PageinatedList -ListURI "$MistAPIURI/sites/$SiteID/wlans/derived?resolve=$Resolve" -Session $MistSession
+    return Get-PageinatedList -ListURI "$MistAPIURI/sites/$SiteID/wlans/derived?resolve=$Resolve"
 }
 
 Function Get-MistSiteGroups
@@ -726,7 +726,7 @@ Function Get-MistSites
     (
 
     )
-    Get-PageinatedList -ListURI "$MistAPIURI/orgs/$MistOrgID/sites" -Session $MistSession -PageSize 100
+    Get-PageinatedList -ListURI "$MistAPIURI/orgs/$MistOrgID/sites" -PageSize 100
 }
 
 Function Get-MistSiteGroups
@@ -786,7 +786,7 @@ Function Get-MistDeviceStats
 
     $ListURI = "$MistAPIURI/orgs/$MistOrgID/stats/devices"
 
-    $AllWaps = Get-PageinatedList -Session $MistSession -ListURI $ListURI -PageSize 100
+    $AllWaps = Get-PageinatedList -ListURI $ListURI -PageSize 100
 
     return $AllWaps | where {$_.ip.Length -gt 0}
 }
@@ -800,7 +800,7 @@ Function Get-MistOrgEdges
 
     $ListURI = "$MistAPIURI/orgs/$MistOrgID/mxedges"
 
-    $Edges = Get-PageinatedList -Session $MistSession -ListURI $ListURI -PageSize 100
+    $Edges = Get-PageinatedList -ListURI $ListURI -PageSize 100
 
     return $Edges
 }
