@@ -4,14 +4,344 @@
 #Forcing TLS1.2 otherwise requests on certain machines will fail
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$APIURI = "https://api.mist.com/api/v1"
+## Variables + getters and setters
 
-$Countries = @{
+$MistAPIURI = "https://api.mist.com/api/v1"
+$MistSession = $null
+$MistAPIKey = $null
+$MistOrgID = $null
+$MistUserCreds = $null
+$MistVariablesSave = $false
+$MistVariablesToSave = @("MistAPIKey","MistAPIURI","MistOrgID","MistVariablesSave","MistVariablesToSave")
+$ModuleFolder = (Get-Module PowerMist -ListAvailable).path -replace "PowerMist\.psm1"
+
+$MistCountries = @{
     "default"="GB"
 }
 
-$TimeZones = @{
+$MistTimeZones = @{
     "default"="Etc/GMT"
+}
+
+Function Get-MistAPIURI
+{
+    $MistAPIURI
+}
+
+Function Get-MistSession
+{
+    $MistSession
+}
+
+Function Get-MistAPIKey
+{
+    $MistAPIKey
+}
+
+Function Get-MistOrgID
+{
+    $MistOrgID
+}
+
+Function Get-MistUserCreds
+{
+    $MistUserCreds
+}
+
+Function Get-MistVariableSaveStatus
+{
+    $MistVariablesSave
+}
+
+Function Get-MistVariableSaveList
+{
+    $MistVariablesToSave
+}
+
+Function Set-MistAPIURI
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string]
+        $NewMistAPIURI
+    )
+    set-variable -scope 1 -name MistAPIURI -value $NewMistAPIURI
+}
+
+Function Set-MistSession
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [Microsoft.PowerShell.Commands.WebRequestSession]
+        $NewMistSession
+    )
+    set-variable -scope 1 -name MistSession -value $NewMistSession
+}
+
+Function Set-MistAPIKey
+{
+    param
+    (
+        [Parameter(Mandatory=$false)]
+        [System.Collections.Hashtable]
+        $NewMistAPIKey
+    )
+    set-variable -scope 1 -name MistAPIKey -value $NewMistAPIKey
+}
+
+Function Set-MistAPIKeyFromPath
+{
+    param
+    (
+        [Parameter(Mandatory=$false)]
+        [string]
+        $NewMistAPIKeyPath
+    )
+
+    $NewMistAPIKey = Import-MistAPIKey $NewMistAPIKeyPath
+
+    set-variable -scope 1 -name MistAPIKey -value $NewMistAPIKey
+}
+
+Function Set-MistOrgID
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string]
+        $NewMistOrgID
+    )
+    set-variable -scope 1 -name MistOrgID -value $NewMistOrgID
+}
+
+Function Set-MistUserCreds
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [System.Management.Automation.PsCredential]
+        $NewMistUserCreds
+    )
+    set-variable -scope 1 -name MistUserCreds -value $NewMistUserCreds
+}
+
+Function Set-MistVariablesSave
+{
+    param
+    (
+        [switch]
+        $enable,
+        [switch]
+        $disable
+    )
+
+    if ($enable)
+    {
+        set-variable -scope 1 -name MistVariablesSave -value $true
+    }
+    elseif ($disable)
+    {
+        set-variable -scope 1 -name MistVariablesSave -value $false
+    }
+    else
+    {
+        throw "No flag set, please call this function with either -enable or -disable"
+    }
+}
+
+Function Set-MistVariablesToSave
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [Object[]]
+        $NewVariablesToSave
+    )
+    set-variable -scope 1 -name MistVariablesToSave -value $NewVariablesToSave
+}
+
+Function Add-MistVariablesToSave
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [Object[]]
+        $NewVariablesToSave
+    )
+    $TempVars = (($MistVariablesToSave + $NewVariablesToSave) | select -unique)
+
+
+    set-variable -scope 1 -name MistVariablesToSave -value $TempVars
+}
+
+
+Function Invoke-MistVariableSave 
+{
+    $AllVariables = Get-Variable -scope 1 | where {$_.name -in $MistVariablesToSave}
+    $VariableStore = @{}
+    $ArrayCounters = @{}
+    foreach ($Variable in $AllVariables)
+    {
+        if ($Variable.value.GetType().name -eq "PSCredential")
+        {
+            Write-Debug "Adding Credential value $($Variable.Name) to saved Variables"
+            $VariableStore += @{
+                                   "username" = $Variable.value.username
+                                   "securepass" = ($Variable.value.Password | ConvertFrom-SecureString)
+                               }
+        }
+        elseif ($Variable.value.GetType().name -eq "Hashtable")
+        {
+
+            Write-Debug "Adding Hashtable $($Variable.Name) to saved Variables"
+
+            $TableName = $Variable.Name
+            if ($TableName -match "APIKey")
+            {
+                Write-Verbose "APIKey found, encrypting for storage"
+
+                $Creds = New-Object System.Management.Automation.PsCredential(($Variable.value["ID"]), (ConvertTo-SecureString -asplaintext ($Variable.value["Key"]) -Force))
+                $Keystring = $Creds.Password | ConvertFrom-SecureString
+
+                foreach ($Key in $Variable.value.Keys)
+                {
+                    $StoreName = "$($TableName)_HashTable_$($Key)"
+                    if ($Key -eq "Key")
+                    {
+                        $VariableStore += @{$StoreName = $Keystring}
+                    }
+                    else {
+                        $VariableStore += @{$StoreName = ($Variable.value[$Key])}
+                    }
+                }
+            }
+            else
+            {
+                foreach ($Key in $Variable.value.Keys)
+                {
+                    $StoreName = "$($TableName)_HashTable_$($Key)"
+
+                    $VariableStore += @{$StoreName = ($Variable.value[$Key])}
+                }
+            }
+        }
+        elseif($Variable.value.GetType().name -eq "Object[]")
+        {
+            Write-Debug "Adding Array value $($Variable.Name) to saved Variables"
+            foreach ($Value in $Variable.value)
+            {
+                if ($ArrayCounters[($Variable.name)] -eq $null)
+                {
+                    $Counter = 0
+                    $ArrayCounters += @{$Variable.name = $Counter}
+                }
+                else
+                {
+                    $ArrayCounters[$Variable.name]++
+                    $Counter = $ArrayCounters[$Variable.name]
+                }
+
+                $StoreName = "$($Variable.name)_Array_$($Counter)"
+
+                $VariableStore += @{$StoreName = $Value}
+            }
+        }
+        else {
+            Write-Debug "Adding normal value $($Variable.Name) to saved Variables"
+            $VariableStore += @{$Variable.name = $Variable.Value}
+        }
+    }
+
+    $VariableStore.GetEnumerator() | sort name | export-csv "$ModuleFolder\$($ENV:Username)-Variables.csv"
+}
+
+Function Invoke-MistVariableLoad
+{
+    $VariablePath = "$ModuleFolder\$($ENV:Username)-Variables.csv"
+    if (test-path $VariablePath)
+    {
+        $VariableStore = import-csv $VariablePath
+
+        foreach ($Variable in ($VariableStore | where {$_.name -notmatch "_HashTable_"}))
+        {
+            if ($Variable.name -match "(username|securepass)")
+            {
+                if ($Variable.name -eq "username")
+                {
+                    Write-Debug "Importing MistCredential"
+                    $EncString = ($VariableStore | where {$_.name -eq "securepass"}).Value | ConvertTo-SecureString
+                    $Credential = New-Object System.Management.Automation.PsCredential($Variable.Value, $EncString)
+                    set-variable -scope 1 -name StatCredential -value $Credential
+                }
+            }
+            else
+            {
+                Write-Debug "Importing $($Variable.name)"
+                set-variable -scope 1 -name $Variable.Name -value $Variable.Value
+            }
+        }
+
+        $Hashtables = ($VariableStore.name -match "([^_]*)_HashTable_") -replace "_HashTable_\w*" | select -unique
+
+        if ($Hashtables)
+        {
+            Write-Debug "Following Hashtable values found"
+            $Hashtables | Write-Debug
+            foreach ($Hashtable in $Hashtables)
+            {
+                Write-Debug "Importing Hashtable $Hashtable"
+                $HashtableValues = $VariableStore | where {$_.name -match $Hashtable}
+
+                $TempHashTable = @{}
+
+                foreach ($HashtableValue in $HashtableValues)
+                {
+                    $Key = $HashtableValue.name -replace "$($Hashtable)_HashTable_"
+
+                    $TempHashTable += @{$Key = $HashtableValue.Value}
+                }
+
+
+                ## This is an insecure way of storing this value in memory but also powershell is kinda shit when it comes to security so like.... meh
+                
+                if ($Hashtable -match "APIKey")
+                {
+                    Write-Debug "API Key found, decrypting into memory"
+                    $APIID = $TempHashTable["ID"]
+                    $EncString = $TempHashTable["Key"] | ConvertTo-SecureString
+                    $APIKeyEnc = New-Object System.Management.Automation.PsCredential($APIID, $EncString)
+                    $TempHashTable = @{"ID"=$APIID;"Key"=$APIKeyEnc.GetNetworkCredential().Password.ToString()}
+                }
+
+                set-variable -scope 1 -name $Hashtable -value $TempHashTable
+            }            
+        }
+
+        $Arrays = ($VariableStore.name -match "([^_]*)_Array") -replace "_Array_\d*" | select -unique
+
+        if ($Arrays)
+        {
+            Write-Debug "Following Hashtable values found"  
+            $Arrays | Write-Debug      
+
+            foreach ($Array in $Arrays)
+            {
+                $ArrayValues = $VariableStore | where {$_.name -match $Array}
+
+                $TempArray = @()
+
+                foreach ($Value in $ArrayValues)
+                {
+                    $TempArray += $Value.value
+                }
+
+                set-variable -scope 1 -name $Array -value $TempArray
+            }
+        }
+    }
+
 }
 
 ## Import Common Functions (if they exist)
@@ -31,15 +361,13 @@ else {
         Throw "CommonFunctions not found, please install the module"
     }
 }
+
 ## Functions
 
 Function Get-PageinatedList
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session,
         [Parameter(Mandatory=$true)]
         [String]
         $ListURI, 
@@ -67,7 +395,7 @@ Function Get-PageinatedList
     Do 
     {
 
-        $WebRequest = Invoke-WebRequest -uri "$($ListURI)$($Operator)limit=$PageSize&page=$Page" -WebSession $Session -ContentType "application\json"
+        $WebRequest = Invoke-WebRequest -uri "$($ListURI)$($Operator)limit=$PageSize&page=$Page" -WebSession $MistSession -ContentType "application\json"
         
         $Results += ConvertFrom-Json $WebRequest.content
         
@@ -91,7 +419,7 @@ Function Get-PageinatedList
     return $Results
 }
 
-Function Get-MistSession
+Function Invoke-MistCredentialBasedLogin
 {
     param
     (
@@ -106,11 +434,11 @@ Function Get-MistSession
 
     $LoginJson = "{""email"": ""$($Creds.UserName)"", ""password"": ""$($Creds.GetNetworkCredential().Password)""}"
 
-    $LoginDeets = Invoke-WebRequest -uri "$APIURI/login" -Method POST -Body $LoginJson -ContentType application/json -SessionVariable 'Session'
+    $LoginDeets = Invoke-WebRequest -uri "$MistAPIURI/login" -Method POST -Body $LoginJson -ContentType application/json -SessionVariable 'Session'
     
-    $Session.Headers.add("X-CSRFTOKEN", ((($Session.Cookies.GetCookieHeader("$APIURI") -split ";")[0] -split "=")[1]))
+    $Session.Headers.add("X-CSRFTOKEN", ((($MistSession.Cookies.GetCookieHeader("$MistAPIURI") -split ";")[0] -split "=")[1]))
 
-    $UserInfo = Get-MistUserInfo $Session
+    $UserInfo = Get-MistUserInfo $MistSession
 
     if ($UserInfo.two_factor_required)
     {
@@ -119,24 +447,49 @@ Function Get-MistSession
 
         $2FAJson = "{""two_factor"": ""$2FA""}"
 
-        $LoginDeets = Invoke-WebRequest -uri "$APIURI/login/two_factor" -Method POST -Body $2FAJson -ContentType application/json -WebSession $Session
-        $Session.headers.'X-CSRFTOKEN' = ((($Session.Cookies.GetCookieHeader("$APIURI") -split ";")[0] -split "=")[1])
+        $LoginDeets = Invoke-WebRequest -uri "$MistAPIURI/login/two_factor" -Method POST -Body $2FAJson -ContentType application/json -WebSession $MistSession
+        $Session.headers.'X-CSRFTOKEN' = ((($MistSession.Cookies.GetCookieHeader("$MistAPIURI") -split ";")[0] -split "=")[1])
     }
     else {
         
     }
-    return $Session
+    set-variable -Scope 1 -Name MistSession -Value $Session
+}
+
+Function Invoke-MistTokenBasedLogin
+{
+    param
+    (
+        [Parameter(Mandatory=$false)]
+        [System.Collections.Hashtable]
+        $APIKey
+    )
+
+    if ((-not $APIKey) -and ($MistAPIKey))
+    {
+        $APIKey = $MistAPIKey
+    }
+    else
+    {
+        throw "No API Key provided and no API Key stored, please provide an API Key"
+    }
+
+    if (-not $MistAPIKey)
+    {
+        set-variable -scope 1 -name MistAPIKey -Value $APIKey
+    }
+
+    $LoginDeets = Invoke-RestMethod -uri "$MistAPIURI/self" -Headers @{"Authorization"="Token $($APIKey["Key"])"} -SessionVariable Session -Method get
+    set-variable -Scope 1 -Name MistSession -Value $Session
 }
 
 Function Get-MistUserInfo
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session
+
     )
-    return Invoke-RestMethod -uri "$APIURI/self"  -WebSession $Session -Method get
+    return Invoke-RestMethod -uri "$MistAPIURI/self"  -WebSession $MistSession -Method get
 }
 
 Function Get-MistSite
@@ -144,14 +497,11 @@ Function Get-MistSite
     param 
     (
         [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
         $SiteID
     )
-    return Invoke-RestMethod -uri "$APIURI/sites/$SiteID"  -WebSession $Session -Method get
+    return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID"  -WebSession $MistSession -Method get
 }
 
 Function Get-MistSiteSettings
@@ -159,23 +509,17 @@ Function Get-MistSiteSettings
     param 
     (
         [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
         $SiteID
     )
-    return Invoke-RestMethod -uri "$APIURI/sites/$SiteID/setting"  -WebSession $Session -Method get
+    return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/setting"  -WebSession $MistSession -Method get
 }
 
 Function Set-MistSiteWlan
 {
     param 
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
@@ -187,16 +531,13 @@ Function Set-MistSiteWlan
         [PSCustomObject]
         $WLANSettings
     )
-    return Invoke-WebRequest -uri "$APIURI/sites/$SiteID/wlans/$WLANID" -WebSession $Session -Method Put -Body ($WLANSettings | convertto-json) -ContentType "application/json"
+    return Invoke-WebRequest -uri "$MistAPIURI/sites/$SiteID/wlans/$WLANID" -WebSession $MistSession -Method Put -Body ($WLANSettings | convertto-json) -ContentType "application/json"
 }
 
 Function Set-MistSiteSettings
 {
     param 
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
@@ -237,16 +578,13 @@ Function Set-MistSiteSettings
         }
     }
     #$SiteSettings
-    return Invoke-WebRequest -uri "$APIURI/sites/$SiteID/setting" -WebSession $Session -Method Put -Body ($SiteSettings | convertto-json) -ContentType "application/json"
+    return Invoke-WebRequest -uri "$MistAPIURI/sites/$SiteID/setting" -WebSession $MistSession -Method Put -Body ($SiteSettings | convertto-json) -ContentType "application/json"
 }
 
 Function Get-MistSiteWlans
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
@@ -255,167 +593,105 @@ Function Get-MistSiteWlans
         [switch]
         $Resolve
     )
-    return Get-PageinatedList -ListURI "$APIURI/sites/$SiteID/wlans/derived?resolve=$Resolve" -Session $Session
+    return Get-PageinatedList -ListURI "$MistAPIURI/sites/$SiteID/wlans/derived?resolve=$Resolve" -Session $MistSession
 }
 
 Function Get-MistSiteGroups
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID
-    )
-    return Invoke-RestMethod -uri "$APIURI/sites/$SiteID/wlans"  -WebSession $Session -Method get
-}
 
-Function Get-MistAPISession
-{
-    param
-    (
-        [Parameter(Mandatory=$true)]
-        [System.Collections.Hashtable]
-        $APIKey
     )
-    $LoginDeets = Invoke-RestMethod -uri "$APIURI/self" -Headers @{"Authorization"="Token $($APIKey["Key"])"} -SessionVariable Session -Method get
-    return $Session
+    return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/wlans"  -WebSession $MistSession -Method get
 }
 
 Function Get-MistOrganizations
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session
+
     )
-    return (Get-MistUserInfo $Session).privileges | where {$_.Scope -eq "org"}
+    return (Get-MistUserInfo $MistSession).privileges | where {$_.Scope -eq "org"}
 }
 
 Function Get-MistOrgWlans
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID
+
     )
-    Invoke-RestMethod -uri "$APIURI/orgs/$OrgID/wlans" -WebSession $Session
+    Invoke-RestMethod -uri "$MistAPIURI/orgs/$MistOrgID/wlans" -WebSession $MistSession
 }
 
 Function Get-MistOrgTemplate
 {
         param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID,
+
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
         $TemplateID
     )
-    Invoke-RestMethod -uri "$APIURI/orgs/$OrgID/templates/$TemplateID" -WebSession $Session
+    Invoke-RestMethod -uri "$MistAPIURI/orgs/$MistOrgID/templates/$TemplateID" -WebSession $MistSession
 }
 
 Function Get-MistOrgWlan
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID,
+
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
         $OrgWlanID
     )
-    Invoke-RestMethod -uri "$APIURI/orgs/$OrgID/wlans/$OrgWlanID" -WebSession $Session
+    Invoke-RestMethod -uri "$MistAPIURI/orgs/$MistOrgID/wlans/$OrgWlanID" -WebSession $MistSession
 }
 
 Function Get-MistOrgTemplates
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID
+
     )
-    Invoke-RestMethod -uri "$APIURI/orgs/$OrgID/templates" -WebSession $Session
+    Invoke-RestMethod -uri "$MistAPIURI/orgs/$MistOrgID/templates" -WebSession $MistSession
 }
 
 Function Get-MistOrgGroup
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID,
+
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
         $GroupID
     )
-    Invoke-RestMethod -uri "$APIURI/orgs/$OrgID/sitegroups/$GroupID" -WebSession $Session
+    Invoke-RestMethod -uri "$MistAPIURI/orgs/$MistOrgID/sitegroups/$GroupID" -WebSession $MistSession
 }
 
 Function Get-MistRFTemplates
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID
+
     )
-    Invoke-RestMethod -uri "$APIURI/orgs/$OrgID/rftemplates" -WebSession $Session
+    Invoke-RestMethod -uri "$MistAPIURI/orgs/$MistOrgID/rftemplates" -WebSession $MistSession
 }
 
 Function Get-MistGroupWlans
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID,
+
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
         $GroupID
     )
     $Wlans = @() 
-    $Templates = Get-MistOrgTemplates $Session $OrgID 
-    $OrgWlans = Get-MistOrgWlans $Session $OrgID
+    $Templates = Get-MistOrgTemplates $MistSession $MistOrgID 
+    $OrgWlans = Get-MistOrgWlans $MistSession $MistOrgID
     
     foreach ($Template in $Templates)
     {
@@ -448,45 +724,27 @@ Function Get-MistSites
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID
+
     )
-    Get-PageinatedList -ListURI "$APIURI/orgs/$OrgID/sites" -Session $Session -PageSize 100
+    Get-PageinatedList -ListURI "$MistAPIURI/orgs/$MistOrgID/sites" -Session $MistSession -PageSize 100
 }
 
 Function Get-MistSiteGroups
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID
+
     )
-    Invoke-RestMethod -uri "$APIURI/orgs/$OrgID/sitegroups" -WebSession $Session
+    Invoke-RestMethod -uri "$MistAPIURI/orgs/$MistOrgID/sitegroups" -WebSession $MistSession
 }
 
 Function Get-MistInventory
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID
+
     )
-    Invoke-RestMethod -uri "$APIURI/orgs/$OrgID/inventory" -WebSession $Session
+    Invoke-RestMethod -uri "$MistAPIURI/orgs/$MistOrgID/inventory" -WebSession $MistSession
 }
 
 Function Get-MistAPIKeys
@@ -497,7 +755,7 @@ Function Get-MistAPIKeys
         [String]
         $APIKeyPath
     )
-    Invoke-RestMethod -uri "$APIURI/self/apitokens" -WebSession $Session
+    Invoke-RestMethod -uri "$MistAPIURI/self/apitokens" -WebSession $MistSession
 }
 
 Function New-MistAPIKey
@@ -508,7 +766,7 @@ Function New-MistAPIKey
         [String]
         $APIKeyPath
     )
-    $TempAPIKey = Invoke-WebRequest -uri "$APIURI/self/apitokens" -WebSession $Session -Method Post -Body $null -ContentType "application/json"
+    $TempAPIKey = Invoke-WebRequest -uri "$MistAPIURI/self/apitokens" -WebSession $MistSession -Method Post -Body $null -ContentType "application/json"
     
     $APIKey = @{"ID" = ""; "Key" = ""}
     $ignore = ($TempAPIKey.Content -match """id"":""[^""]*""")
@@ -523,18 +781,12 @@ Function Get-MistDeviceStats
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID
+
     )
 
-    $ListURI = "$APIURI/orgs/$OrgID/stats/devices"
+    $ListURI = "$MistAPIURI/orgs/$MistOrgID/stats/devices"
 
-    $AllWaps = Get-PageinatedList -Session $Session -ListURI $ListURI -PageSize 100
+    $AllWaps = Get-PageinatedList -Session $MistSession -ListURI $ListURI -PageSize 100
 
     return $AllWaps | where {$_.ip.Length -gt 0}
 }
@@ -543,18 +795,12 @@ Function Get-MistOrgEdges
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID
+
     )
 
-    $ListURI = "$APIURI/orgs/$OrgID/mxedges"
+    $ListURI = "$MistAPIURI/orgs/$MistOrgID/mxedges"
 
-    $Edges = Get-PageinatedList -Session $Session -ListURI $ListURI -PageSize 100
+    $Edges = Get-PageinatedList -Session $MistSession -ListURI $ListURI -PageSize 100
 
     return $Edges
 }
@@ -563,13 +809,7 @@ Function New-MistSite
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID,
+
         [Parameter(Mandatory=$true)]
         [String]
         $SiteName,
@@ -607,20 +847,14 @@ Function New-MistSite
     ""sitegroup_ids"": $(if ($SiteGroups -ne $null) {Get-JSONArray $SiteGroups} else {"[ ]"}),
     ""address"": ""$Address""
 }"
-    Invoke-WebRequest -uri "$APIURI/orgs/$OrgID/sites" -WebSession $Session -Method Post -Body $SiteProperties -ContentType "application/json"
+    Invoke-WebRequest -uri "$MistAPIURI/orgs/$MistOrgID/sites" -WebSession $MistSession -Method Post -Body $SiteProperties -ContentType "application/json"
 }
 
 Function Reset-MistOrgEdgePorts 
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID,  
+  
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
@@ -632,10 +866,10 @@ Function Reset-MistOrgEdgePorts
     $Ports = "{
     ""ports"": $(if ($BouncePorts -ne $null) {Get-JSONArray $BouncePorts} else {"[ ]"})
     }"
-    ## Write-Host "$APIURI/orgs/$OrgID/mxedges/$MEID/services/tunterm/bounce_port"
+    ## Write-Host "$MistAPIURI/orgs/$MistOrgID/mxedges/$MEID/services/tunterm/bounce_port"
     ## Write-Host "$BouncePorts"
     ## Write-Host $Ports
-    Invoke-WebRequest -uri "$APIURI/orgs/$OrgID/mxedges/$MEID/services/tunterm/bounce_port" -WebSession $Session -Method Post -Body $Ports -ContentType "application/json"
+    Invoke-WebRequest -uri "$MistAPIURI/orgs/$MistOrgID/mxedges/$MEID/services/tunterm/bounce_port" -WebSession $MistSession -Method Post -Body $Ports -ContentType "application/json"
 }
 
 Function Get-MistSiteClients
@@ -643,23 +877,17 @@ Function Get-MistSiteClients
     param
     (
         [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
         $SiteID
     )
-    return Get-PageinatedList $Session "$APIURI/sites/$SiteID/stats/clients"
+    return Get-PageinatedList $MistSession "$MistAPIURI/sites/$SiteID/stats/clients"
 }
 
 Function Get-MistSiteMap
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
@@ -669,8 +897,8 @@ Function Get-MistSiteMap
         [String]
         $MapID
     )
-    #"$APIURI/api/v1/sites/$SiteID/maps" 
-    return Invoke-RestMethod -uri "$APIURI/sites/$SiteID/maps/$MapID" -WebSession $Session
+    #"$MistAPIURI/api/v1/sites/$SiteID/maps" 
+    return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/maps/$MapID" -WebSession $MistSession
 }
 
 Function Get-MistSiteMaps
@@ -678,24 +906,18 @@ Function Get-MistSiteMaps
     param
     (
         [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
         $SiteID
     )
-    #"$APIURI/api/v1/sites/$SiteID/maps" 
-    return Invoke-RestMethod -uri "$APIURI/sites/$SiteID/maps" -WebSession $Session
+    #"$MistAPIURI/api/v1/sites/$SiteID/maps" 
+    return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/maps" -WebSession $MistSession
 }
 
 Function Get-MistSiteDevice
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
@@ -705,21 +927,15 @@ Function Get-MistSiteDevice
         [String]
         $DeviceID
     )
-    #"$APIURI/api/v1/sites/$SiteID/maps" 
-    return Invoke-RestMethod -uri "$APIURI/sites/$SiteID/devices/$DeviceID" -WebSession $Session
+    #"$MistAPIURI/api/v1/sites/$SiteID/maps" 
+    return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/devices/$DeviceID" -WebSession $MistSession
 }
 
 Function Disconnect-MistWAPfromEdge 
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID,  
+  
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
@@ -747,22 +963,16 @@ Function Disconnect-MistWAPfromEdge
     ""macs"": $(if ($DisconnectWAPs -ne $null) {Get-JSONArray $Hyphenated} else {"[ ]"})
     }"
 
-    Write-Host "$APIURI/orgs/$OrgID/mxedges/$MEID/services/tunterm/disconnect_aps"
+    Write-Host "$MistAPIURI/orgs/$MistOrgID/mxedges/$MEID/services/tunterm/disconnect_aps"
 
-    Invoke-WebRequest -uri "$APIURI/orgs/$OrgID/mxedges/$MEID/services/tunterm/disconnect_aps" -WebSession $Session -Method Post -Body $WAPArr -ContentType "application/json"
+    Invoke-WebRequest -uri "$MistAPIURI/orgs/$MistOrgID/mxedges/$MEID/services/tunterm/disconnect_aps" -WebSession $MistSession -Method Post -Body $WAPArr -ContentType "application/json"
 }
 
 Function Disconnect-MistWAPsfromEdgeAtRandom
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID,  
+  
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
@@ -778,25 +988,19 @@ Function Disconnect-MistWAPsfromEdgeAtRandom
     ""percentage"": $percentage
     }"
 
-    Write-Host "$APIURI/orgs/$OrgID/mxedges/$MEID/services/tunterm/disconnect_aps"
+    Write-Host "$MistAPIURI/orgs/$MistOrgID/mxedges/$MEID/services/tunterm/disconnect_aps"
 
-    Invoke-WebRequest -uri "$APIURI/orgs/$OrgID/mxedges/$MEID/services/tunterm/disconnect_aps" -WebSession $Session -Method Post -Body $WAPArr -ContentType "application/json"
+    Invoke-WebRequest -uri "$MistAPIURI/orgs/$MistOrgID/mxedges/$MEID/services/tunterm/disconnect_aps" -WebSession $MistSession -Method Post -Body $WAPArr -ContentType "application/json"
 }
 
 Function Import-MistSites
 {
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $Session, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $OrgID
+
     )
     $Sites = import-csv -LiteralPath $CSV
-    $ExistingSites = Get-AllSites $Session
+    $ExistingSites = Get-AllSites $MistSession
     foreach ($Site in $Sites)
     {
         $SiteName = "$($Site.'Site Code') - $($Site.'Branch Name')"
@@ -804,7 +1008,7 @@ Function Import-MistSites
         if (($ExistingSites | where {$_.name -match $Site.'Site Code'}) -eq $null)
         {
             Write-Host "$SiteName Doesn't exist"
-            New-Site $Session $SiteName 
+            New-Site $MistSession $SiteName 
         }
         else
         {
@@ -903,4 +1107,22 @@ Function Get-MistDeviceManagementURI
         $MistDevice
     )
     return "https://manage.mist.com/admin/?org_id=$($MistDevice.org_id)#!$($MistDevice.type)/detail/$($MistDevice.id)/$($MistDevice.site_id)"
+}
+
+
+## Load any saved variables
+
+Invoke-MistVariableLoad
+
+if ($MistAPIKey -ne $null)
+{
+    Invoke-MistTokenBasedLogin
+}
+elseif ($MistUserCreds -ne $null)
+{
+    Invoke-MistCredentialBasedLogin
+}
+else
+{
+    Write-Debug "No credentials stored"
 }
