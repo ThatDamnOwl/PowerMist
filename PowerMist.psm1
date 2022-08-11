@@ -23,43 +23,105 @@ $MistTimeZones = @{
     "default"="Etc/GMT"
 }
 
+
+
 Function Get-MistAPIURI
 {
+<#
+.SYNOPSIS
+Gets the current used APIUri for the mist module
+.DESCRIPTION
+Outputs the module variable that stores the URI used for API Calls to Mist
+#>
+
     $MistAPIURI
 }
 
 Function Get-MistSession
 {
+<#
+.SYNOPSIS
+Gets the current used WebSession for the mist module
+.DESCRIPTION
+Outputs the module variable that stores the WebSession used for API Calls to Mist
+#>   
     $MistSession
 }
 
 Function Get-MistAPIKey
 {
+<#
+.SYNOPSIS
+Gets the current used APIKey for the mist module
+.DESCRIPTION
+Outputs the module variable that stores the APIKey used for API Calls to Mist
+#>   
     $MistAPIKey
 }
 
 Function Get-MistOrgID
 {
+<#
+.SYNOPSIS
+Gets the current used orgid for the mist module
+.DESCRIPTION
+Outputs the module variable that stores the currently selected orgid used for organisation specific api calls
+#>   
     $MistOrgID
 }
 
 Function Get-MistUserCreds
 {
+<#
+.SYNOPSIS
+Gets the current used credentials for the mist module
+.DESCRIPTION
+Outputs the module variable that stores the credentials used for API Calls to Mist
+#>   
     $MistUserCreds
 }
 
 Function Get-MistVariableSaveStatus
 {
+<#
+.SYNOPSIS
+Gets the current status of the variable save functions for the mist module
+.DESCRIPTION
+Outputs module variable save system status
+#>
     $MistVariablesSave
 }
 
 Function Get-MistVariableSaveList
 {
+<#
+.SYNOPSIS
+Gets the current list of variables to save from the mist module
+.DESCRIPTION
+Outputs the list of module variable that will be saved
+#>
     $MistVariablesToSave
 }
 
 Function Set-MistAPIURI
 {
+<#
+.SYNOPSIS
+Sets the APIURI to use for API Calls to Mist
+.DESCRIPTION
+Sets the APIURI to use for API Calls to Mist
+
+The APIURI has to follow the following format:
+(protocol)://(fqdn)/(apiroot)
+
+by default it is 
+
+https://api.mist.com/api/v1
+
+This variable should never change.
+.EXAMPLE
+Set-MistAPIURI -NewMistAPIURI https://api.mist.com/api/v1
+#>
     param
     (
         [Parameter(Mandatory=$true)]
@@ -69,15 +131,36 @@ Function Set-MistAPIURI
     set-variable -scope 1 -name MistAPIURI -value $NewMistAPIURI
 }
 
-Function Set-MistSession
+Function Refresh-MistSession
 {
+<#
+.SYNOPSIS
+Refreshes the Web session to use for API Calls to Mist
+.DESCRIPTION
+Refreshes or creates a new API Session
+.EXAMPLE
+Refresh-MistSession -token
+#>
     param
     (
-        [Parameter(Mandatory=$true)]
-        [Microsoft.PowerShell.Commands.WebRequestSession]
-        $NewMistSession
+        [switch]
+        $token,
+        [switch]
+        $credentials
     )
-    set-variable -scope 1 -name MistSession -value $NewMistSession
+
+    if (($token) -or ($MistAPIKey -ne $null))
+    {
+        Invoke-MistTokenBasedLogin
+    }
+    elseif ($credentials -or ($MistUserCreds -ne $null))
+    {
+        Invoke-MistCredentialBasedLogin
+    }
+    else
+    {
+        throw "No possible authentication process designated, please check your credentials and try again"
+    }
 }
 
 Function Set-MistAPIKey
@@ -175,7 +258,6 @@ Function Add-MistVariablesToSave
 
     set-variable -scope 1 -name MistVariablesToSave -value $TempVars
 }
-
 
 Function Invoke-MistVariableSave 
 {
@@ -781,15 +863,25 @@ Function Get-MistDeviceStats
 {
     param
     (
-
+        [Parameter(Mandatory=$false)]
+        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
+        [String]
+        $DeviceID
     )
 
     $ListURI = "$MistAPIURI/orgs/$MistOrgID/stats/devices"
 
     $AllWaps = Get-PageinatedList -ListURI $ListURI -PageSize 100
 
+    if ($DeviceID)
+    {
+        $AllWaps = $AllWaps | where {$_.id -eq $DeviceID}
+    }
+
     return $AllWaps | where {$_.ip.Length -gt 0}
 }
+
+Function Get
 
 Function Get-MistOrgEdges
 {
