@@ -4,6 +4,8 @@
 #Forcing TLS1.2 otherwise requests on certain machines will fail
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+Import-module CommonFunctions -force
+
 ## Variables + getters and setters
 
 $MistAPIURI = "https://api.mist.com/api/v1"
@@ -259,171 +261,32 @@ Function Add-MistVariablesToSave
     set-variable -scope 1 -name MistVariablesToSave -value $TempVars
 }
 
-Function Invoke-MistVariableSave 
+Function Invoke-MistVariableSave
 {
-    $AllVariables = Get-Variable -scope 1 | where {$_.name -in $MistVariablesToSave}
-    $VariableStore = @{}
-    $ArrayCounters = @{}
-    foreach ($Variable in $AllVariables)
-    {
-        if ($Variable.value.GetType().name -eq "PSCredential")
-        {
-            Write-Debug "Adding Credential value $($Variable.Name) to saved Variables"
-            $VariableStore += @{
-                                   "username" = $Variable.value.username
-                                   "securepass" = ($Variable.value.Password | ConvertFrom-SecureString)
-                               }
-        }
-        elseif ($Variable.value.GetType().name -eq "Hashtable")
-        {
+    $AllVariables = Get-Variable -scope 1 | where {$_.name -match "Mist"} | where {$_.name -in $MistVariablesToSave}
+    $SavePath = "$ModuleFolder\$($ENV:Username)-Variables.json"
 
-            Write-Debug "Adding Hashtable $($Variable.Name) to saved Variables"
+    Write-Debug "Starting save job to $SavePath"
 
-            $TableName = $Variable.Name
-            if ($TableName -match "APIKey")
-            {
-                Write-Verbose "APIKey found, encrypting for storage"
-
-                $Creds = New-Object System.Management.Automation.PsCredential(($Variable.value["ID"]), (ConvertTo-SecureString -asplaintext ($Variable.value["Key"]) -Force))
-                $Keystring = $Creds.Password | ConvertFrom-SecureString
-
-                foreach ($Key in $Variable.value.Keys)
-                {
-                    $StoreName = "$($TableName)_HashTable_$($Key)"
-                    if ($Key -eq "Key")
-                    {
-                        $VariableStore += @{$StoreName = $Keystring}
-                    }
-                    else {
-                        $VariableStore += @{$StoreName = ($Variable.value[$Key])}
-                    }
-                }
-            }
-            else
-            {
-                foreach ($Key in $Variable.value.Keys)
-                {
-                    $StoreName = "$($TableName)_HashTable_$($Key)"
-
-                    $VariableStore += @{$StoreName = ($Variable.value[$Key])}
-                }
-            }
-        }
-        elseif($Variable.value.GetType().name -eq "Object[]")
-        {
-            Write-Debug "Adding Array value $($Variable.Name) to saved Variables"
-            foreach ($Value in $Variable.value)
-            {
-                if ($ArrayCounters[($Variable.name)] -eq $null)
-                {
-                    $Counter = 0
-                    $ArrayCounters += @{$Variable.name = $Counter}
-                }
-                else
-                {
-                    $ArrayCounters[$Variable.name]++
-                    $Counter = $ArrayCounters[$Variable.name]
-                }
-
-                $StoreName = "$($Variable.name)_Array_$($Counter)"
-
-                $VariableStore += @{$StoreName = $Value}
-            }
-        }
-        else {
-            Write-Debug "Adding normal value $($Variable.Name) to saved Variables"
-            $VariableStore += @{$Variable.name = $Variable.Value}
-        }
-    }
-
-    $VariableStore.GetEnumerator() | sort name | export-csv "$ModuleFolder\$($ENV:Username)-Variables.csv"
+    Invoke-VariableJSONSave -ModuleName "PowerMist" -SavePath $SavePath -Variables $AllVariables -verbosepreference:$VerbosePreference
 }
 
 Function Invoke-MistVariableLoad
 {
-    $VariablePath = "$ModuleFolder\$($ENV:Username)-Variables.csv"
-    if (test-path $VariablePath)
+    $SavePath = "$ModuleFolder\$($ENV:Username)-Variables.json"
+
+    if (test-path $SavePath)
     {
-        $VariableStore = import-csv $VariablePath
+        Write-Debug "Starting load job from $SavePath"
 
-        foreach ($Variable in ($VariableStore | where {$_.name -notmatch "_HashTable_"}))
+        $Variables = Invoke-VariableJSONLoad -LoadPath $SavePath -Verbosepreference:$VerbosePreference
+
+        foreach ($Variable in $Variables)
         {
-            if ($Variable.name -match "(username|securepass)")
-            {
-                if ($Variable.name -eq "username")
-                {
-                    Write-Debug "Importing MistCredential"
-                    $EncString = ($VariableStore | where {$_.name -eq "securepass"}).Value | ConvertTo-SecureString
-                    $Credential = New-Object System.Management.Automation.PsCredential($Variable.Value, $EncString)
-                    set-variable -scope 1 -name StatCredential -value $Credential
-                }
-            }
-            else
-            {
-                Write-Debug "Importing $($Variable.name)"
-                set-variable -scope 1 -name $Variable.Name -value $Variable.Value
-            }
-        }
-
-        $Hashtables = ($VariableStore.name -match "([^_]*)_HashTable_") -replace "_HashTable_\w*" | select -unique
-
-        if ($Hashtables)
-        {
-            Write-Debug "Following Hashtable values found"
-            $Hashtables | Write-Debug
-            foreach ($Hashtable in $Hashtables)
-            {
-                Write-Debug "Importing Hashtable $Hashtable"
-                $HashtableValues = $VariableStore | where {$_.name -match $Hashtable}
-
-                $TempHashTable = @{}
-
-                foreach ($HashtableValue in $HashtableValues)
-                {
-                    $Key = $HashtableValue.name -replace "$($Hashtable)_HashTable_"
-
-                    $TempHashTable += @{$Key = $HashtableValue.Value}
-                }
-
-
-                ## This is an insecure way of storing this value in memory but also powershell is kinda shit when it comes to security so like.... meh
-                
-                if ($Hashtable -match "APIKey")
-                {
-                    Write-Debug "API Key found, decrypting into memory"
-                    $APIID = $TempHashTable["ID"]
-                    $EncString = $TempHashTable["Key"] | ConvertTo-SecureString
-                    $APIKeyEnc = New-Object System.Management.Automation.PsCredential($APIID, $EncString)
-                    $TempHashTable = @{"ID"=$APIID;"Key"=$APIKeyEnc.GetNetworkCredential().Password.ToString()}
-                }
-
-                set-variable -scope 1 -name $Hashtable -value $TempHashTable
-            }            
-        }
-
-        $Arrays = ($VariableStore.name -match "([^_]*)_Array") -replace "_Array_\d*" | select -unique
-
-        if ($Arrays)
-        {
-            Write-Debug "Following Hashtable values found"  
-            $Arrays | Write-Debug      
-
-            foreach ($Array in $Arrays)
-            {
-                $ArrayValues = $VariableStore | where {$_.name -match $Array}
-
-                $TempArray = @()
-
-                foreach ($Value in $ArrayValues)
-                {
-                    $TempArray += $Value.value
-                }
-
-                set-variable -scope 1 -name $Array -value $TempArray
-            }
-        }
+            Write-Debug "Importing variable $($Variable.name)"
+            set-variable -name $Variable.name -Value $Variable.Value -scope 1
+        } 
     }
-
 }
 
 ## Import Common Functions (if they exist)
@@ -881,7 +744,10 @@ Function Get-MistDeviceStats
     return $AllWaps | where {$_.ip.Length -gt 0}
 }
 
-Function Get
+Function Get-MistSomething
+{
+
+}
 
 Function Get-MistOrgEdges
 {
