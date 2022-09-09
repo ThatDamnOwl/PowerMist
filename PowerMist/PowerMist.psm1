@@ -545,9 +545,144 @@ Function Get-MistSiteGroups
 {
     param
     (
-
+        [Parameter(Mandatory=$true)]
+        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
+        [String]
+        $SiteID
     )
     return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/wlans"  -WebSession $MistSession -Method get
+}
+
+Function Get-MistSitePSK
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
+        [String]
+        $SiteID,
+        [Parameter(Mandatory=$false)]
+        [String]
+        $Name
+    )
+    if ($Name -ne $null)
+    {
+        return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/psks?name=$Name" 
+    }
+    else
+    {
+        return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/psks" 
+    }
+}
+
+Function Add-MistSitePSK
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
+        [String]
+        $SiteID,
+        [Parameter(Mandatory=$true)]
+        [PSCustomObject]
+        $PSKSettings
+    )
+    Invoke-WebRequest -uri "$MistAPIURI/sites/$SiteID/psks" -WebSession $MistSession -Method Post -Body ($PSKSettings | convertto-json) -ContentType "application/json"
+}
+
+Function Set-MistSitePSK
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
+        [String]
+        $SiteID,
+        [Parameter(Mandatory=$true)]
+        [PSCustomObject]
+        $PSKSettings
+    )
+    return Invoke-WebRequest -uri "$MistAPIURI/sites/$SiteID/wlans/$WLANID" -WebSession $MistSession -Method Put -Body ($PSKSettings | convertto-json) -ContentType "application/json"
+}
+
+Function Initialize-MistSitePSKSettings
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string]
+        $name,
+        [Parameter(Mandatory=$true)]
+        [string]
+        $passphrase,
+        [Parameter(Mandatory=$true)]
+        [string]
+        $ssid,
+        [Parameter(Mandatory=$false)]
+        [string]
+        $usage = "multi",
+        [Parameter(Mandatory=$false)]
+        [string]
+        $role,
+        [Parameter(Mandatory=$false)]
+        [int]
+        $vlanId,
+        [Parameter(Mandatory=$false)]
+        [string]
+        $mac,
+        [Parameter(Mandatory=$false)]
+        [int]
+        $expireTime = $null,
+        [Parameter(Mandatory=$false)]
+        [string]
+        $notes,
+        [Parameter(Mandatory=$false)]
+        [boolean]
+        $notifyExpiry,
+        [Parameter(Mandatory=$false)]
+        [int]
+        $expiryNotificationTime,
+        [Parameter(Mandatory=$false)]
+        [boolean]
+        $notifyOnCreateOrEdit,
+        [Parameter(Mandatory=$false)]
+        [string]
+        $email
+    )
+
+    $BaseObject = [pscustomobject]@{
+        "name" = $Name
+        "passphrase" = $Passphrase
+        "ssid" = $SSID
+        "expire_time" = $ExpireTime
+        "role" = $role
+    }
+
+    if ($ExpireTime -eq 0)
+    {
+        $BaseObject | add-member -name expire_time -Value $null -MemberType NoteProperty -force
+    }
+
+    if ($mac -eq "")
+    {
+        $BaseObject | add-member -name "-mac" -Value $true -MemberType NoteProperty -force
+    }
+
+    ## This feels dodgy but works
+    $ExtraVars = Get-Variable -scope 0 | where {($_.name -notin @("name","passphrase","ssid","expireTime","BaseObject","true","false","role")) -and `
+                                                ($_.value -ne $null) -and `
+                                                ($_.name -cmatch "^[a-z]{1}")}
+
+    foreach ($ExtraVar in $ExtraVars)
+    {
+        if (($ExtraVar.value -ne $null) -and ($ExtraVar.value -ne 0) -and ($ExtraVar.value -ne ""))
+        {
+            $Name = ($ExtraVar.name -creplace "([A-Z]{1}[a-z]*)",'_$1').tolower()
+            $BaseObject | add-member -name $Name -Value $ExtraVar.value -MemberType NoteProperty -force
+        }
+    }
+
+    return $BaseObject
 }
 
 Function Get-MistOrganizations
@@ -742,11 +877,6 @@ Function Get-MistDeviceStats
     }
 
     return $AllWaps | where {$_.ip.Length -gt 0}
-}
-
-Function Get-MistSomething
-{
-
 }
 
 Function Get-MistOrgEdges
