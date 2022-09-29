@@ -809,6 +809,19 @@ Function Get-MistSites
     Get-PageinatedList -ListURI "$MistAPIURI/orgs/$MistOrgID/sites" -PageSize 100
 }
 
+Function Get-MistSiteDeviceStats
+{
+
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
+        [String]
+        $SiteID
+    )
+    Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/stats/devices" -WebSession $MistSession
+}
+
 Function Get-MistSiteGroups
 {
     param
@@ -822,9 +835,30 @@ Function Get-MistInventory
 {
     param
     (
-
+        [Parameter(Mandatory=$false)]
+        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
+        [String]
+        $OrgID
     )
-    Invoke-RestMethod -uri "$MistAPIURI/orgs/$MistOrgID/inventory" -WebSession $MistSession
+
+    if ($OrgID = $null)
+    {
+        $OrgID = $MistOrgID
+    }
+
+    Invoke-RestMethod -uri "$MistAPIURI/orgs/$OrgID/inventory" -WebSession $MistSession
+}
+
+Function Get-MistSiteInventory
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
+        [String]
+        $SiteID
+    )
+    Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/devices" -WebSession $MistSession
 }
 
 Function Get-MistAPIKeys
@@ -857,7 +891,7 @@ Function New-MistAPIKey
     return $APIKey
 }
 
-Function Get-MistDeviceStats
+Function Get-MistOrgDeviceStats
 {
     param
     (
