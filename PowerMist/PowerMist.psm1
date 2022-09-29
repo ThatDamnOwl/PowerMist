@@ -817,9 +817,17 @@ Function Get-MistSiteDeviceStats
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
-        $SiteID
+        $SiteID,
+        [Parameter(Mandatory=$false)]
+        [ValidatePattern("(ap|switch|all)")]
+        [String]
+        $DeviceType = "all",
+        [Parameter(Mandatory=$false)]
+        [ValidatePattern("(all|connected|disconnected)")]
+        [String]
+        $DeviceStatus = "all"
     )
-    Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/stats/devices" -WebSession $MistSession
+    Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/stats/devices?type=$($DeviceType)&status=$($DeviceStatus)" -WebSession $MistSession
 }
 
 Function Get-MistSiteGroups
