@@ -849,7 +849,7 @@ Function Get-MistInventory
         $OrgID
     )
 
-    if ($OrgID = $null)
+    if ($OrgID -eq $null)
     {
         $OrgID = $MistOrgID
     }
