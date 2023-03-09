@@ -1,4 +1,4 @@
-﻿## Constants
+## Constants
 #ToDo Change all hashtables to lookups from API for more flexibility
 # Mist API Endpoint
 #Forcing TLS1.2 otherwise requests on certain machines will fail
@@ -518,7 +518,7 @@ Function Set-MistSiteSettings
     {
         if ($AllowedFields -notcontains $Property.name)
         {
-            Write-Verbose "$($Property.name) is not an allowed field, removing from the settings"
+            Write-Warning "$($Property.name) is not an allowed field, removing from the settings"
             $SiteSettings.PSObject.Properties.remove($Property.name)
         }
     }
@@ -694,6 +694,19 @@ Function Get-MistOrganizations
     return (Get-MistUserInfo $MistSession).privileges | where {$_.Scope -eq "org"}
 }
 
+Function Get-MistSiteAlarms
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
+        [String]
+        $SiteID
+    )
+
+    Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/alarms/search"
+}
+
 Function Get-MistOrgWlans
 {
     param
@@ -757,6 +770,16 @@ Function Get-MistRFTemplates
 
     )
     Invoke-RestMethod -uri "$MistAPIURI/orgs/$MistOrgID/rftemplates" -WebSession $MistSession
+}
+
+Function Get-MistOrgPsks
+{
+    param
+    (
+
+    )
+
+    Get-PageinatedList -ListUri "$MistAPIURI/orgs/$MistOrgID/psks" -PageSize 100
 }
 
 Function Get-MistGroupWlans
@@ -899,6 +922,46 @@ Function New-MistAPIKey
     return $APIKey
 }
 
+Function New-MistOrgPSK
+{
+    param
+    (
+        $Name,
+        $Passphrase,
+        $SSID,
+        $Usage = 0,
+        $VLAN = ""
+    )
+
+    $PSKInfo = "
+{
+    ""name"": ""$Name"",
+    ""ssid"": ""$SSID"",
+    ""passphrase"": ""$Passphrase"",
+    ""usage"": ""0"",
+    ""vlan"": ""$VLAN""
+}
+"
+    Invoke-WebRequest -uri "$MistAPIURI/orgs/$MistOrgID/psks" -WebSession $MistSession -Method Post -Body $PSKInfo -ContentType "application/json"
+}
+
+Function Update-MistOrgPSK
+{
+    param
+    (
+        $PSKs
+    )
+
+    if ($PSKs.count -eq $Null)
+    {
+        $PSKs = @($PSKs)
+    }
+
+    $PSKJSON = convertto-json $PSKs
+
+    Invoke-WebRequest -uri "$MistAPIURI/orgs/$MistOrgID/psks" -Websession $MistSession -Method PUT -Body $PSKJSON -ContentType "application/json"
+}
+
 Function Get-MistOrgDeviceStats
 {
     param
@@ -951,16 +1014,7 @@ Function New-MistSite
         $Country = "GB",
         [Parameter(Mandatory=$false)]
         [String]
-        $Lat = "51.477934", 
-        [Parameter(Mandatory=$false)]
-        [String]
-        $Lng = "-0.001467", 
-        [Parameter(Mandatory=$false)]
-        [String]
         $Address = "Greenwich, London SE10 8XJ, United Kingdom", 
-        [Parameter(Mandatory=$false)]
-        [String]
-        $RFTemplate, 
         [Parameter(Mandatory=$false)]
         [Object[]]
         $SiteGroups
@@ -970,14 +1024,28 @@ Function New-MistSite
     ""name"": ""$SiteName"",
     ""timezone"": ""$TimeZone"",
     ""country_code"": ""$Country"",
-    ""rftemplate_id"": ""$RFTemplate"",
     ""secpolicy_id"": """",
     ""alarmtemplate_id"": """",
-    ""latlng"": { ""lat"": $lat, ""lng"": $lng },
     ""sitegroup_ids"": $(if ($SiteGroups -ne $null) {Get-JSONArray $SiteGroups} else {"[ ]"}),
     ""address"": ""$Address""
 }"
     Invoke-WebRequest -uri "$MistAPIURI/orgs/$MistOrgID/sites" -WebSession $MistSession -Method Post -Body $SiteProperties -ContentType "application/json"
+}
+
+Function New-MistSiteGroup
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [String]
+        $Name           
+    )
+
+    $SiteGroupProperties = "{
+    ""name"": ""$Name""
+}"
+
+    Invoke-WebRequest -uri "$MistAPIURI/orgs/$MistOrgID/sitegroups" -WebSession $MistSession -Method Post -Body $SiteGroupProperties -ContentType "application/json" 
 }
 
 Function Reset-MistOrgEdgePorts 
