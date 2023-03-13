@@ -4,7 +4,7 @@
 #Forcing TLS1.2 otherwise requests on certain machines will fail
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-Import-module CommonFunctions -force
+Import-module AdhocAves.CommonFunctions -force
 ## Variables + getters and setters
 
 $MistAPIURI = "https://api.mist.com/api/v1"
@@ -299,7 +299,7 @@ else {
     $CommonFunctions = Get-Module CommonFunctions -listavailable
     if ($CommonFunctions)
     {
-        Import-Module CommonFunctions
+        Import-module AdhocAves.CommonFunctions
     }
     else {
         Throw "CommonFunctions not found, please install the module"
