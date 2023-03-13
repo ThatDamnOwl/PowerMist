@@ -9,11 +9,11 @@ Import-module CommonFunctions -force
 
 $MistAPIURI = "https://api.mist.com/api/v1"
 $MistSession = $null
-$MistAPIKey = $null
+$MistAPIToken = $null
 $MistOrgID = $null
 $MistUserCreds = $null
 $MistVariablesSave = $false
-$MistVariablesToSave = @("MistAPIKey","MistAPIURI","MistOrgID","MistVariablesSave","MistVariablesToSave")
+$MistVariablesToSave = @("MistAPIToken","MistAPIURI","MistOrgID","MistVariablesSave","MistVariablesToSave")
 $ModuleFolder = $MyInvocation.MyCommand.Path -replace "PowerMist\.psm1"
 
 $MistCountries = @{
@@ -26,7 +26,7 @@ $MistTimeZones = @{
 
 
 
-Function Get-MistAPIURI
+Function Get-MistSavedAPIURI
 {
 <#
 .SYNOPSIS
@@ -38,7 +38,7 @@ Outputs the module variable that stores the URI used for API Calls to Mist
     $MistAPIURI
 }
 
-Function Get-MistSession
+Function Get-MistSavedSession
 {
 <#
 .SYNOPSIS
@@ -49,18 +49,18 @@ Outputs the module variable that stores the WebSession used for API Calls to Mis
     $MistSession
 }
 
-Function Get-MistAPIKey
+Function Get-MistSavedAPIToken
 {
 <#
 .SYNOPSIS
-Gets the current used APIKey for the mist module
+Gets the current used APIToken for the mist module
 .DESCRIPTION
-Outputs the module variable that stores the APIKey used for API Calls to Mist
+Outputs the module variable that stores the APIToken used for API Calls to Mist
 #>   
-    $MistAPIKey
+    $MistAPIToken
 }
 
-Function Get-MistOrgID
+Function Get-MistSavedOrgID
 {
 <#
 .SYNOPSIS
@@ -71,7 +71,7 @@ Outputs the module variable that stores the currently selected orgid used for or
     $MistOrgID
 }
 
-Function Get-MistUserCreds
+Function Get-MistSavedUserCreds
 {
 <#
 .SYNOPSIS
@@ -104,7 +104,7 @@ Outputs the list of module variable that will be saved
     $MistVariablesToSave
 }
 
-Function Set-MistAPIURI
+Function Set-MistSavedAPIURI
 {
 <#
 .SYNOPSIS
@@ -132,7 +132,7 @@ Set-MistAPIURI -NewMistAPIURI https://api.mist.com/api/v1
     set-variable -scope Global -name MistAPIURI -value $NewMistAPIURI
 }
 
-Function Refresh-MistSession
+Function Restart-MistSession
 {
 <#
 .SYNOPSIS
@@ -140,7 +140,7 @@ Refreshes the Web session to use for API Calls to Mist
 .DESCRIPTION
 Refreshes or creates a new API Session
 .EXAMPLE
-Refresh-MistSession -token
+Restart-MistSession -token
 #>
     param
     (
@@ -150,13 +150,13 @@ Refresh-MistSession -token
         $credentials
     )
 
-    if (($token) -or ($MistAPIKey -ne $null))
+    if (($token) -or ($MistAPIToken -ne $null))
     {
-        Invoke-MistTokenBasedLogin
+        Invoke-MistLogin -APIToken $MistAPIToken
     }
     elseif ($credentials -or ($MistUserCreds -ne $null))
     {
-        Invoke-MistCredentialBasedLogin
+        Invoke-MistLogin -AP
     }
     else
     {
@@ -164,32 +164,32 @@ Refresh-MistSession -token
     }
 }
 
-Function Set-MistAPIKey
+Function Set-MistSavedAPIToken
 {
     param
     (
         [Parameter(Mandatory=$false)]
         [System.Collections.Hashtable]
-        $NewMistAPIKey
+        $NewMistAPIToken
     )
-    set-variable -scope Global -name MistAPIKey -value $NewMistAPIKey
+    set-variable -scope Global -name MistAPIToken -value $NewMistAPIToken
 }
 
-Function Set-MistAPIKeyFromPath
+Function Set-MistSavedAPITokenFromPath
 {
     param
     (
         [Parameter(Mandatory=$false)]
         [string]
-        $NewMistAPIKeyPath
+        $NewMistAPITokenPath
     )
 
-    $NewMistAPIKey = Import-MistAPIKey $NewMistAPIKeyPath
+    $NewMistAPIToken = Import-MistAPIToken $NewMistAPITokenPath
 
-    set-variable -scope Global -name MistAPIKey -value $NewMistAPIKey
+    set-variable -scope Global -name MistAPIToken -value $NewMistAPIToken
 }
 
-Function Set-MistOrgID
+Function Set-MistSavedOrgID
 {
     param
     (
@@ -200,7 +200,7 @@ Function Set-MistOrgID
     set-variable -scope Global -name MistOrgID -value $NewMistOrgID
 }
 
-Function Set-MistUserCreds
+Function Set-MistSavedUserCreds
 {
     param
     (
@@ -322,168 +322,17 @@ Import-module "$ModuleFolder\PowerMist_Sites.psm1"
 
 Import-module "$ModuleFolder\PowerMist_Orgs.psm1"
 
-Function Get-MistSiteClients
-{
-    param
-    (
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $SiteID
-    )
-    return Get-PageinatedList $MistSession "$MistAPIURI/sites/$SiteID/stats/clients"
-}
 
-Function Get-MistSiteMap
-{
-    param
-    (
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $SiteID, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $MapID
-    )
-    #"$MistAPIURI/api/v1/sites/$SiteID/maps" 
-    return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/maps/$MapID" -WebSession $MistSession
-}
 
-Function Get-MistSiteMaps
-{
-    param
-    (
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $SiteID
-    )
-    #"$MistAPIURI/api/v1/sites/$SiteID/maps" 
-    return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/maps" -WebSession $MistSession
-}
 
-Function Get-MistSiteDevice
-{
-    param
-    (
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $SiteID, 
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $DeviceID
-    )
-    #"$MistAPIURI/api/v1/sites/$SiteID/maps" 
-    return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/devices/$DeviceID" -WebSession $MistSession
-}
 
-Function Disconnect-MistWAPfromEdge 
-{
-    param
-    (
-  
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $MEID, 
-        [Parameter(Mandatory=$true)]
-        [string[]]
-        $DisconnectWAPs
-    )
-    
-    Write-Host $DisconnectWAPs
 
-    $Hyphenated = @()
 
-    if ($DisconnectWAPs -notmatch "-")
-    {
-        foreach ($DisconnectWAP in $DisconnectWAPs)
-        {
-            $Hyphenated += Get-MistHyphenMAC $DisconnectWAP
-        }
-    }
 
-    #Write-Host $Hyphenated
-    
-    $WAPArr = "{
-    ""macs"": $(if ($DisconnectWAPs -ne $null) {Get-JSONArray $Hyphenated} else {"[ ]"})
-    }"
 
-    Write-Host "$MistAPIURI/orgs/$MistOrgID/mxedges/$MEID/services/tunterm/disconnect_aps"
+## This is a bad way of storing the Token, I will be replacing this
 
-    Invoke-WebRequest -uri "$MistAPIURI/orgs/$MistOrgID/mxedges/$MEID/services/tunterm/disconnect_aps" -WebSession $MistSession -Method Post -Body $WAPArr -ContentType "application/json"
-}
 
-Function Disconnect-MistWAPsfromEdgeAtRandom
-{
-    param
-    (
-  
-        [Parameter(Mandatory=$true)]
-        [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
-        [String]
-        $MEID, 
-        [Parameter(Mandatory=$true)]
-        [int]
-        $percentage
-    )
-
-    #Write-Host $Hyphenated
-    
-    $WAPArr = "{
-    ""percentage"": $percentage
-    }"
-
-    Write-Host "$MistAPIURI/orgs/$MistOrgID/mxedges/$MEID/services/tunterm/disconnect_aps"
-
-    Invoke-WebRequest -uri "$MistAPIURI/orgs/$MistOrgID/mxedges/$MEID/services/tunterm/disconnect_aps" -WebSession $MistSession -Method Post -Body $WAPArr -ContentType "application/json"
-}
-
-Function Import-MistSites
-{
-    param
-    (
-
-    )
-    $Sites = import-csv -LiteralPath $CSV
-    $ExistingSites = Get-AllSites $MistSession
-    foreach ($Site in $Sites)
-    {
-        $SiteName = "$($Site.'Site Code') - $($Site.'Branch Name')"
-
-        if (($ExistingSites | where {$_.name -match $Site.'Site Code'}) -eq $null)
-        {
-            Write-Host "$SiteName Doesn't exist"
-            New-Site $MistSession $SiteName 
-        }
-        else
-        {
-            Write-Host "$SiteName Exists"
-        }
-    }
-}
-
-## This is a bad way of storing the key, I will be replacing this
-
-Function Import-MistAPIKey
-{
-    param
-    (
-        [Parameter(Mandatory=$true)]
-        [String]
-        $APIKeyPath
-    )
-    $SplitPath = $APIKeyPath -split "\\"
-    $APIID = $SplitPath[$SplitPath.length - 1] -replace "\.txt",""
-    $EncString = Get-Content $APIKeyPath | ConvertTo-SecureString
-    $APIKeyEnc = New-Object System.Management.Automation.PsCredential($APIID, $EncString)
-    $APIKey = @{"ID"=$APIID;"Key"=$APIKeyEnc.GetNetworkCredential().Password.ToString()}
-    $APIKey
-}
 
 Function Get-JSONArray
 {
@@ -508,71 +357,41 @@ Function Get-JSONArray
     return $JSONArray
 }
 
-Function Export-MistAPIKey
-{
-    param
-    (
-        [Parameter(Mandatory=$true)]
-        [String]
-        $StoragePath,
-        [Parameter(Mandatory=$true)]
-        [System.Collections.Hashtable]
-        $APIKey
-    )
-    $Creds = New-Object System.Management.Automation.PsCredential($APIKey["ID"], (ConvertTo-SecureString -asplaintext $APIKey["Key"] -Force))
-    $Creds.Password | ConvertFrom-SecureString | Set-Content $StoragePath
-}
 
-Function Get-MistHyphenMAC
-{
-    param
-    (
-        [Parameter(Mandatory=$true,ValueFromPipeline)]
-        [String[]]
-        $MACString
-    )
-    $ReturnMacs = @()
-    foreach ($mac in $MACString)
-    {
-        #write-host $mac
-        if ($mac -match ":")
-        {
-            $mac = $mac -replace ":"
-        }
 
-        for ($x = 10; $x -gt 0; $x = $x - 2)
-        {
-            $mac = $mac.Insert($x,"-")
-        }
 
-        $ReturnMacs += $mac
-    }
-    return $ReturnMacs
-}
 
-Function Get-MistDeviceManagementURI
-{
-    param 
-    (
-        $MistDevice
-    )
-    return "https://manage.mist.com/admin/?org_id=$($MistDevice.org_id)#!$($MistDevice.type)/detail/$($MistDevice.id)/$($MistDevice.site_id)"
-}
+
 
 
 ## Load any saved variables
 
 Invoke-MistVariableLoad
 
-if ($MistAPIKey -ne $null)
+try
 {
-    Invoke-MistTokenBasedLogin
+    $MistAPIToken = Get-Variable -Scope Global -Name MistAPIToken -Value -ErrorAction SilentlyContinue
+    $MistUserCreds = Get-Variable -Scope Global -Name MistUserCreds -Value -ErrorAction SilentlyContinue
+}
+catch
+{
+
+}
+
+if ($MistAPIToken -ne $null)
+{
+    Write-Verbose $MistAPIToken.id
+    Write-Verbose $MistAPIToken.key
+    Invoke-MistLogin -APIToken $MistAPIToken
 }
 elseif ($MistUserCreds -ne $null)
 {
-    Invoke-MistCredentialBasedLogin
+    Write-Verbose $MistUserCreds
+    Invoke-MistLogin -Credentials $MistUserCreds
 }
 else
 {
+    Write-Debug $MistAPIToken
+    Write-Debug $MistUserCreds
     Write-Debug "No credentials stored"
 }
