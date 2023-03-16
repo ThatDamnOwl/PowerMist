@@ -263,22 +263,22 @@ Function Add-MistVariablesToSave
 Function Invoke-MistVariableSave
 {
     $AllVariables = Get-Variable -scope Global | where {$_.name -match "Mist"} | where {$_.name -in $MistVariablesToSave}
-    $SavePath = "$ModuleFolder\$($ENV:Username)-Variables.json"
+    $SaveFile = "PowerMist-$($ENV:Username)-Variables.json"
 
-    Write-Debug "Starting save job to $SavePath"
+    Write-Debug "Starting save job to $SaveFile"
 
-    Invoke-VariableJSONSave -ModuleName "PowerMist" -SavePath $SavePath -Variables $AllVariables -verbosepreference:$VerbosePreference
+    Invoke-VariableJSONSave -ModuleName "PowerMist" -SaveFile $SaveFile -Variables $AllVariables -verbosepreference:$VerbosePreference
 }
 
 Function Invoke-MistVariableLoad
 {
-    $SavePath = "$ModuleFolder\$($ENV:Username)-Variables.json"
+    $SaveFile = "PowerMist-$($ENV:Username)-Variables.json"
 
-    if (test-path $SavePath)
+    if (test-path $SaveFile)
     {
-        Write-Debug "Starting load job from $SavePath"
+        Write-Debug "Starting load job from $SaveFile"
 
-        $Variables = Invoke-VariableJSONLoad -LoadPath $SavePath -Verbosepreference:$VerbosePreference
+        $Variables = Invoke-VariableJSONLoad -LoadFile $SaveFile -Verbosepreference:$VerbosePreference
 
         foreach ($Variable in $Variables)
         {
@@ -287,26 +287,6 @@ Function Invoke-MistVariableLoad
         } 
     }
 }
-
-## Import Common Functions (if they exist)
-$CommonFunctions = "$(Split-Path -parent $MyInvocation.MyCommand.Path)\CommonFunctions.psm1"
-
-if (test-path $CommonFunctions)
-{
-   Import-Module $CommonFunctions
-}
-else {
-    $CommonFunctions = Get-Module CommonFunctions -listavailable
-    if ($CommonFunctions)
-    {
-        Import-module AdhocAves.CommonFunctions
-    }
-    else {
-        Throw "CommonFunctions not found, please install the module"
-    }
-}
-
-
 
 ## Functions
 
