@@ -15,6 +15,7 @@ $MistUserCreds = $null
 $MistVariablesSave = $false
 $MistVariablesToSave = @("MistAPIToken","MistAPIURI","MistOrgID","MistVariablesSave","MistVariablesToSave")
 $ModuleFolder = $MyInvocation.MyCommand.Path -replace "PowerMist\.psm1"
+$SaveFile = "PowerMist-$($ENV:Username)-Variables.json"
 
 $MistCountries = @{
     "default"="GB"
@@ -263,7 +264,6 @@ Function Add-MistVariablesToSave
 Function Invoke-MistVariableSave
 {
     $AllVariables = Get-Variable -scope Global | where {$_.name -match "Mist"} | where {$_.name -in $MistVariablesToSave}
-    $SaveFile = "PowerMist-$($ENV:Username)-Variables.json"
 
     Write-Debug "Starting save job to $SaveFile"
 
@@ -272,20 +272,15 @@ Function Invoke-MistVariableSave
 
 Function Invoke-MistVariableLoad
 {
-    $SaveFile = "PowerMist-$($ENV:Username)-Variables.json"
+    Write-Debug "Starting load job from $SaveFile"
 
-    if (test-path $SaveFile)
+    $Variables = Invoke-VariableJSONLoad -LoadFile $SaveFile -Verbosepreference:$VerbosePreference
+
+    foreach ($Variable in $Variables)
     {
-        Write-Debug "Starting load job from $SaveFile"
-
-        $Variables = Invoke-VariableJSONLoad -LoadFile $SaveFile -Verbosepreference:$VerbosePreference
-
-        foreach ($Variable in $Variables)
-        {
-            Write-Debug "Importing variable $($Variable.name)"
-            set-variable -name $Variable.name -Value $Variable.Value -scope Global
-        } 
-    }
+        Write-Debug "Importing variable $($Variable.name)"
+        set-variable -name $Variable.name -Value $Variable.Value -scope Global
+    } 
 }
 
 ## Functions
