@@ -1,7 +1,5 @@
 $ModuleFolder = $MyInvocation.MyCommand.Path -replace "PowerMist_Sites\.psm1"
 
-Import-module "$ModuleFolder\PowerMist_Tools.psm1" -force
-
 Function Get-MistSite
 {
     param 
@@ -14,16 +12,40 @@ Function Get-MistSite
     return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID"  -WebSession $MistSession -Method get
 }
 
-Function Get-MistSiteSettings
+Function Get-MistSiteSetting
 {
     param 
     (
         [Parameter(Mandatory=$true)]
         [ValidatePattern("\w{8}-\w{4}-\w{4}-\w{4}-\w{12}")]
         [String]
-        $SiteID
+        $SiteID,
+        [String[]]
+        $Settings,
+        [switch]
+        $All
     )
-    return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/setting"  -WebSession $MistSession -Method get
+    $Return = Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/setting"  -WebSession $MistSession -Method get
+
+    if ($All)
+    {
+
+    }
+    else
+    {
+        $Members = $Return | Get-Member
+
+        foreach ($Member in $Members)
+        {
+            if ($Member.name -notin $Settings)
+            {
+                $Return.PSObject.Properties.Remove($Member.Name)
+            }
+        }
+    }
+
+    return $Return
+
 }
 
 Function Set-MistSiteWlan
@@ -103,7 +125,7 @@ Function Get-MistSiteWlans
         [switch]
         $Resolve
     )
-    return Get-PageinatedList -ListURI "$MistAPIURI/sites/$SiteID/wlans/derived?resolve=$Resolve"
+    return Get-PageinatedList -ListURI "$MistAPIURI/sites/$SiteID/wlans/derived?resolve=$Resolve" -WebSession $MistSession
 }
 
 Function Get-MistSiteGroups
@@ -305,7 +327,7 @@ Function Get-MistSiteClients
         [String]
         $SiteID
     )
-    return Get-PageinatedList $MistSession "$MistAPIURI/sites/$SiteID/stats/clients"
+    return Get-PageinatedList $MistSession "$MistAPIURI/sites/$SiteID/stats/clients" -WebSession $MistSession
 }
 
 Function Get-MistSiteMap
@@ -354,3 +376,4 @@ Function Get-MistSiteDevice
     #"$MistAPIURI/api/v1/sites/$SiteID/maps" 
     return Invoke-RestMethod -uri "$MistAPIURI/sites/$SiteID/devices/$DeviceID" -WebSession $MistSession
 }
+

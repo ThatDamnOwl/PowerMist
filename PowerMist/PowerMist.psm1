@@ -285,59 +285,7 @@ Function Invoke-MistVariableLoad
 
 ## Functions
 
-### Formatting/Data manipulation functions
-
-Import-module "$ModuleFolder\PowerMist_Auth.psm1" -force
-
-### Site Manipulation functions
-
-Import-module "$ModuleFolder\PowerMist_Sites.psm1"
-
-### Org Manipulation functions
-
-Import-module "$ModuleFolder\PowerMist_Orgs.psm1"
-
-
-
-
-
-
-
-
-
-## This is a bad way of storing the Token, I will be replacing this
-
-
-
-Function Get-JSONArray
-{
-    param 
-    (
-        [Parameter(Mandatory=$true)]
-        [object[]]
-        $InputArray
-    )
-
-    $JSONArray = "["
-
-    foreach ($Input in $InputArray)
-    {
-        $JSONArray += """$Input"", "
-    }
-
-    $JSONArray = $JSONArray.Substring(0,$JSONArray.Length - 2)
-
-    $JSONArray += "]"
-
-    return $JSONArray
-}
-
-
-
-
-
-
-
+Import-module "$ModuleFolder\PowerMist_Auth.psm1"
 
 ## Load any saved variables
 

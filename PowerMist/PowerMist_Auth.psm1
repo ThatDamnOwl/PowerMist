@@ -1,9 +1,4 @@
-[void] [System.Reflection.Assembly]::LoadWithPartialName("System.Drawing") 
-[void] [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") 
-
 $ModuleFolder = $MyInvocation.MyCommand.Path -replace "PowerMist_Auth\.psm1"
-
-Import-module "$ModuleFolder\PowerMist_Tools.psm1" -force
 
 Function Invoke-MistLogin
 {
@@ -144,7 +139,7 @@ Function Get-MistUserAuditLogs
     $EDStartFloor = [Math]::Floor([decimal]$EDStart)
     $EDEndFloor = [Math]::Floor([decimal]$EDEnd)
 
-    Get-PageinatedList -listuri "$MistAPIURI/self/logs?start=$EDStartFloor&end=$EDEndFloor"
+    Get-PageinatedList -listuri "$MistAPIURI/self/logs?start=$EDStartFloor&end=$EDEndFloor" -WebSession $MistSession
 }
 
 Function Get-MistAPIToken

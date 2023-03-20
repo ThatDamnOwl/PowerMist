@@ -1,7 +1,5 @@
 $ModuleFolder = $MyInvocation.MyCommand.Path -replace "PowerMist_Orgs\.psm1"
 
-Import-module "$ModuleFolder\PowerMist_Tools.psm1" -force
-
 Function Get-MistOrganizations
 {
     param
@@ -83,7 +81,7 @@ Function Get-MistOrgPsks
 
     )
 
-    Get-PageinatedList -ListUri "$MistAPIURI/orgs/$MistOrgID/psks" -PageSize 100
+    Get-PageinatedList -ListUri "$MistAPIURI/orgs/$MistOrgID/psks" -PageSize 100 -WebSession $MistSession
 }
 
 Function Get-MistGroupWlans
@@ -133,7 +131,7 @@ Function Get-MistSites
     (
 
     )
-    Get-PageinatedList -ListURI "$MistAPIURI/orgs/$MistOrgID/sites" -PageSize 100
+    Get-PageinatedList -ListURI "$MistAPIURI/orgs/$MistOrgID/sites" -PageSize 100 -WebSession $MistSession
 }
 
 Function Get-MistSiteGroups
@@ -215,7 +213,7 @@ Function Get-MistOrgDeviceStats
 
     $ListURI = "$MistAPIURI/orgs/$MistOrgID/stats/devices"
 
-    $AllWaps = Get-PageinatedList -ListURI $ListURI -PageSize 100
+    $AllWaps = Get-PageinatedList -ListURI $ListURI -PageSize 100 -WebSession $MistSession
 
     if ($DeviceID)
     {
@@ -234,7 +232,7 @@ Function Get-MistOrgEdges
 
     $ListURI = "$MistAPIURI/orgs/$MistOrgID/mxedges"
 
-    $Edges = Get-PageinatedList -ListURI $ListURI -PageSize 100
+    $Edges = Get-PageinatedList -ListURI $ListURI -PageSize 100 -WebSession $MistSession
 
     return $Edges
 }
@@ -329,13 +327,7 @@ Function Disconnect-MistWAPfromEdge
 
     $Hyphenated = @()
 
-    if ($DisconnectWAPs -notmatch "-")
-    {
-        foreach ($DisconnectWAP in $DisconnectWAPs)
-        {
-            $Hyphenated += Get-MistHyphenMAC $DisconnectWAP
-        }
-    }
+    $Hyphenated += Get-SeperatedMAC $DisconnectWAP "-"
 
     #Write-Host $Hyphenated
     
@@ -395,4 +387,13 @@ Function Import-MistSites
             Write-Host "$SiteName Exists"
         }
     }
+}
+
+Function Get-MistDeviceManagementURI
+{
+    param 
+    (
+        $MistDevice
+    )
+    return "https://manage.mist.com/admin/?org_id=$($MistDevice.org_id)#!$($MistDevice.type)/detail/$($MistDevice.id)/$($MistDevice.site_id)"
 }
